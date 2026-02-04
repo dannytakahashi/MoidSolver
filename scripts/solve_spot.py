@@ -235,31 +235,124 @@ def _display_recommendations(console: Console, solver: ExploitativeSolver, board
     console.print(panel)
 
 
-def _display_strategy_summary(console: Console, profile) -> None:
-    """Display strategy summary."""
-    table = Table(title="Strategy Summary", show_header=True)
-    table.add_column("Information Set", style="cyan")
-    table.add_column("Actions", justify="left")
+def _display_strategy_summary(console: Console, profile, bet_sizes: list[float] = None) -> None:
+    """Display strategy summary in a readable format."""
 
-    # Show first few info sets
-    count = 0
+    # Map bucket indices to hand strength labels
+    BUCKET_LABELS = {
+        0: "Air (0-12%)",
+        1: "Weak (12-25%)",
+        2: "Weak (25-37%)",
+        3: "Medium (37-50%)",
+        4: "Medium (50-62%)",
+        5: "Strong (62-75%)",
+        6: "Strong (75-87%)",
+        7: "Nuts (87-100%)",
+    }
+
+    def format_action(action, pot_size=6.5) -> str:
+        """Format action for display."""
+        name = action.action_type.name
+        if action.amount > 0:
+            # Calculate as percentage of pot
+            pct = (action.amount / pot_size) * 100
+            if name == "ALL_IN":
+                return "ALL-IN"
+            elif name in ("BET", "RAISE"):
+                return f"{name} {pct:.0f}%"
+            else:
+                return f"{name} {action.amount:.1f}bb"
+        return name
+
+    def parse_info_set(key: str) -> dict:
+        """Parse info set key into components."""
+        # Format is "P{player}|B{bucket}|{history}"
+        result = {"player": None, "bucket": None, "history": ""}
+
+        parts = key.split("|")
+        if len(parts) >= 1 and parts[0].startswith("P"):
+            try:
+                result["player"] = int(parts[0][1:])
+            except ValueError:
+                pass
+        if len(parts) >= 2 and parts[1].startswith("B"):
+            try:
+                result["bucket"] = int(parts[1][1:])
+            except ValueError:
+                pass
+        if len(parts) >= 3:
+            result["history"] = parts[2]
+
+        return result
+
+    # Group strategies by situation
+    situations = {
+        "OOP First to Act": [],      # OOP, no history
+        "IP vs Check": [],            # IP, after OOP checks
+        "OOP vs Bet": [],             # OOP, facing bet
+        "IP vs Check-Raise": [],      # IP, facing check-raise
+    }
+
     for key, strategy in profile.strategies.items():
-        if count >= 10:
-            break
+        info = parse_info_set(key)
+        if info["player"] is None or info["bucket"] is None:
+            continue
 
-        actions_str = ", ".join(
-            f"{a.action_type.name}:{p:.0%}"
-            for a, p in zip(strategy.actions, strategy.probabilities)
-            if p > 0.01
-        )
+        history = info["history"]
+        player = info["player"]
+        bucket = info["bucket"]
 
-        # Truncate key for display
-        display_key = key[:40] + "..." if len(key) > 40 else key
+        # Categorize by situation
+        if player == 1 and history == "":
+            situations["OOP First to Act"].append((bucket, strategy))
+        elif player == 0 and history == "CHECK":
+            situations["IP vs Check"].append((bucket, strategy))
+        elif player == 1 and "BET" in history and history.count(":") == 1:
+            situations["OOP vs Bet"].append((bucket, strategy))
+        elif player == 0 and "CHECK" in history and "RAISE" in history:
+            situations["IP vs Check-Raise"].append((bucket, strategy))
 
-        table.add_row(display_key, actions_str)
-        count += 1
+    # Display each situation
+    for situation_name, entries in situations.items():
+        if not entries:
+            continue
 
-    console.print(table)
+        # Sort by bucket (strongest first)
+        entries.sort(key=lambda x: -x[0])
+
+        console.print(f"\n[bold cyan]{situation_name}[/]")
+        console.print("─" * 60)
+
+        table = Table(show_header=True, header_style="bold", box=None)
+        table.add_column("Hand Strength", style="white", width=18)
+        table.add_column("Strategy", justify="left")
+
+        for bucket, strategy in entries:
+            bucket_label = BUCKET_LABELS.get(bucket, f"Bucket {bucket}")
+
+            # Format actions with probabilities
+            action_parts = []
+            for action, prob in zip(strategy.actions, strategy.probabilities):
+                if prob >= 0.05:  # Only show actions with >= 5% frequency
+                    action_str = format_action(action)
+                    # Color code by action type
+                    if "FOLD" in action_str:
+                        action_parts.append(f"[red]{action_str} {prob:.0%}[/]")
+                    elif "CHECK" in action_str:
+                        action_parts.append(f"[dim]{action_str} {prob:.0%}[/]")
+                    elif "CALL" in action_str:
+                        action_parts.append(f"[blue]{action_str} {prob:.0%}[/]")
+                    elif "BET" in action_str or "RAISE" in action_str:
+                        action_parts.append(f"[green]{action_str} {prob:.0%}[/]")
+                    elif "ALL-IN" in action_str:
+                        action_parts.append(f"[yellow]{action_str} {prob:.0%}[/]")
+                    else:
+                        action_parts.append(f"{action_str} {prob:.0%}")
+
+            table.add_row(bucket_label, "  ".join(action_parts))
+
+        console.print(table)
+
     console.print(f"\n[dim]Total information sets: {profile.num_info_sets()}[/]")
 
 

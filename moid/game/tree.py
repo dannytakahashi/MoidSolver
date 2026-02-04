@@ -46,7 +46,7 @@ class GameNode:
     - The hand ends (TERMINAL)
     """
     node_type: NodeType
-    player: int = 0              # 0 = IP (Button), 1 = OOP (BB)
+    player: int = 0              # 0 = IP (in position), 1 = OOP (out of position, acts first)
     pot: float = 0.0             # Current pot in BBs
     stack: float = 100.0         # Effective stack in BBs
     to_call: float = 0.0         # Amount to call
@@ -151,7 +151,7 @@ class GameNode:
                     new_type = NodeType.TERMINAL
                     child = GameNode(
                         node_type=new_type,
-                        player=0,
+                        player=1,  # OOP
                         pot=new_pot,
                         stack=self.stack - self.to_call,
                         to_call=0,
@@ -165,7 +165,7 @@ class GameNode:
                     new_type = NodeType.CHANCE
                     child = GameNode(
                         node_type=new_type,
-                        player=0,
+                        player=1,  # OOP acts first on new street
                         pot=new_pot,
                         stack=self.stack - self.to_call,
                         to_call=0,
@@ -192,7 +192,7 @@ class GameNode:
                     new_type = NodeType.TERMINAL
                     child = GameNode(
                         node_type=new_type,
-                        player=0,
+                        player=1,  # OOP
                         pot=new_pot,
                         stack=self.stack,
                         to_call=0,
@@ -205,7 +205,7 @@ class GameNode:
                     new_type = NodeType.CHANCE
                     child = GameNode(
                         node_type=new_type,
-                        player=0,
+                        player=1,  # OOP acts first on new street
                         pot=new_pot,
                         stack=self.stack,
                         to_call=0,
@@ -302,7 +302,7 @@ class GameTree:
         """
         self.root = GameNode(
             node_type=NodeType.PLAYER,
-            player=0,  # IP acts first on flop
+            player=1,  # OOP acts first postflop
             pot=self.starting_pot,
             stack=self.effective_stack,
             to_call=0,
@@ -328,7 +328,7 @@ class GameTree:
             # Full implementation would enumerate possible runouts
             next_node = GameNode(
                 node_type=NodeType.PLAYER,
-                player=0,  # OOP acts first postflop
+                player=1,  # OOP acts first on each street
                 pot=node.pot,
                 stack=node.stack,
                 to_call=0,
