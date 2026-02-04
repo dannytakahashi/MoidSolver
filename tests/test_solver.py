@@ -8,7 +8,7 @@ from moid.game.tree import GameTree, GameNode, NodeType, Action, ActionType
 from moid.solver.strategy import Strategy, StrategyProfile, make_info_set_key
 from moid.solver.cfr import CFRSolver, CFRConfig
 from moid.solver.best_response import (
-    BestResponseSolver, ExploitativeSolver, OpponentModel
+    BestResponseSolver, AdaptiveSolver, OpponentModel
 )
 from moid.analysis.stats import PlayerStats
 
@@ -270,7 +270,7 @@ class TestBestResponseSolver:
             assert max(strategy.probabilities) == 1.0
 
 
-class TestExploitativeSolver:
+class TestAdaptiveSolver:
     def test_solve(self):
         stats = PlayerStats(
             hands=1000,
@@ -286,7 +286,7 @@ class TestExploitativeSolver:
             Card.from_string("2c"),
         ]
 
-        solver = ExploitativeSolver(
+        solver = AdaptiveSolver(
             stats=stats,
             board=board,
             starting_pot=6.5,
@@ -303,7 +303,7 @@ class TestExploitativeSolver:
 
         board = [Card.from_string("Ks"), Card.from_string("7d"), Card.from_string("2c")]
 
-        solver = ExploitativeSolver(stats, board)
+        solver = AdaptiveSolver(stats, board)
 
         # With high fold to cbet, should recommend betting with air
         action, explanation = solver.get_recommended_action(

@@ -1,8 +1,8 @@
 """
-Best response and exploitative strategy computation.
+Best response and adaptive strategy computation.
 
 Given an opponent's (potentially suboptimal) strategy,
-computes the maximally exploitative counter-strategy.
+computes the maximally adaptive counter-strategy.
 """
 
 from dataclasses import dataclass
@@ -294,12 +294,12 @@ class BestResponseSolver:
         return hero_equity * pot - (1 - hero_equity) * pot
 
 
-class ExploitativeSolver:
+class AdaptiveSolver:
     """
-    High-level interface for computing exploitative strategies.
+    High-level interface for computing adaptive strategies.
 
     Combines population analysis with best response computation
-    to find maximally exploitative plays against microstakes pools.
+    to find maximally adaptive plays against microstakes pools.
     """
 
     def __init__(
@@ -310,7 +310,7 @@ class ExploitativeSolver:
         effective_stack: float = 100,
     ):
         """
-        Initialize exploitative solver.
+        Initialize adaptive solver.
 
         Args:
             stats: Population or player statistics
@@ -327,13 +327,13 @@ class ExploitativeSolver:
 
     def solve(self, bet_sizes: list[float] = [0.5, 0.75, 1.0]) -> StrategyProfile:
         """
-        Compute exploitative strategy.
+        Compute adaptive strategy.
 
         Args:
             bet_sizes: Available bet sizes as pot fractions
 
         Returns:
-            Exploitative strategy profile
+            Adaptive strategy profile
         """
         # Build game tree
         street = 1 if len(self.board) == 3 else 2 if len(self.board) == 4 else 3

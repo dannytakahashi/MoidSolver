@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from moid.game.cards import Card
 from moid.game.tree import GameTree
 from moid.solver.cfr import CFRSolver, CFRConfig
-from moid.solver.best_response import ExploitativeSolver
+from moid.solver.best_response import AdaptiveSolver
 from moid.analysis.stats import PlayerStats
 from moid.db import get_connection
 from moid.analysis import compute_stats
@@ -25,7 +25,7 @@ from moid.viz import RangeDisplay
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Solve a poker spot using CFR or exploitative solver"
+        description="Solve a poker spot using CFR or adaptive solver"
     )
     parser.add_argument(
         "-b", "--board",
@@ -57,11 +57,11 @@ def main():
     )
     parser.add_argument(
         "-d", "--database",
-        help="Use population stats from database for exploitative solving",
+        help="Use population stats from database for adaptive solving",
     )
     parser.add_argument(
         "--mode",
-        choices=["nash", "exploitative"],
+        choices=["nash", "adaptive"],
         default="nash",
         help="Solving mode (default: nash)",
     )
@@ -101,7 +101,7 @@ def main():
     console.print(f"[bold]Bet sizes:[/] {', '.join(f'{s*100:.0f}%' for s in bet_sizes)}")
 
     # Choose solving mode
-    if args.mode == "exploitative" or args.database:
+    if args.mode == "adaptive" or args.database:
         # Load population stats
         if args.database:
             db_path = Path(args.database)
@@ -127,13 +127,13 @@ def main():
             )
 
         console.print()
-        console.print("[bold]Mode:[/] Exploitative (against population)")
+        console.print("[bold]Mode:[/] Adaptive (against population)")
         _display_opponent_stats(console, stats)
 
         console.print()
-        console.print("[bold]Computing exploitative strategy...[/]")
+        console.print("[bold]Computing adaptive strategy...[/]")
 
-        solver = ExploitativeSolver(
+        solver = AdaptiveSolver(
             stats=stats,
             board=board,
             starting_pot=args.pot,
@@ -212,7 +212,7 @@ def _display_opponent_stats(console: Console, stats: PlayerStats) -> None:
     console.print(table)
 
 
-def _display_recommendations(console: Console, solver: ExploitativeSolver, board) -> None:
+def _display_recommendations(console: Console, solver: AdaptiveSolver, board) -> None:
     """Display exploitation recommendations."""
     console.print()
 
@@ -229,7 +229,7 @@ def _display_recommendations(console: Console, solver: ExploitativeSolver, board
 
     panel = Panel(
         "\n".join(recommendations[:4]),  # Show first 4
-        title="[bold]Exploitative Recommendations[/]",
+        title="[bold]Adaptive Recommendations[/]",
         border_style="green",
     )
     console.print(panel)

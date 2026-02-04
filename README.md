@@ -1,6 +1,6 @@
 # MoidSolver
 
-An exploitative microstakes NLHE solver for 6-max no-limit hold'em, focused on identifying maximally exploitative strategies against microstakes populations using Ignition/Bovada hand history data.
+A microstakes NLHE solver for 6-max no-limit hold'em, focused on identifying optimal strategies against microstakes populations using Ignition/Bovada hand history data.
 
 ## Table of Contents
 
@@ -65,7 +65,7 @@ python scripts/import_hands.py /path/to/hand/histories/ -d hands.db
 python scripts/analyze_population.py -d hands.db --exploits
 
 # 3. Solve a specific spot
-python scripts/solve_spot.py -b "AsKh7d" -p 6.5 -s 100 --mode exploitative -d hands.db
+python scripts/solve_spot.py -b "AsKh7d" -p 6.5 -s 100 --mode adaptive -d hands.db
 ```
 
 ## CLI Tools
@@ -161,7 +161,7 @@ python scripts/analyze_population.py -d hands.db --by-position --by-stack --expl
 
 ### Solving Spots
 
-Solve specific poker spots using CFR or exploitative methods.
+Solve specific poker spots using CFR or population-based methods.
 
 ```bash
 python scripts/solve_spot.py [OPTIONS]
@@ -173,8 +173,8 @@ python scripts/solve_spot.py [OPTIONS]
 - `-s, --stack BBs` - Effective stack in big blinds (default: 100)
 - `-i, --iterations N` - CFR iterations (default: 1000)
 - `--bet-sizes SIZES` - Bet sizes as pot fractions (default: "0.33,0.5,0.75,1.0")
-- `-d, --database PATH` - Use population stats for exploitative solving
-- `--mode MODE` - Solving mode: "nash" or "exploitative" (default: nash)
+- `-d, --database PATH` - Use population stats for adaptive solving
+- `--mode MODE` - Solving mode: "nash" or "adaptive" (default: nash)
 - `-o, --output PATH` - Save strategy to file
 - `-v, --verbose` - Verbose output
 
@@ -184,8 +184,8 @@ python scripts/solve_spot.py [OPTIONS]
 # Solve for Nash equilibrium on a flop
 python scripts/solve_spot.py -b "AsKh7d" -i 5000
 
-# Solve exploitatively using population data
-python scripts/solve_spot.py -b "AsKh7d" --mode exploitative -d hands.db
+# Solve adaptively using population data
+python scripts/solve_spot.py -b "AsKh7d" --mode adaptive -d hands.db
 
 # Solve a turn spot with specific stack/pot
 python scripts/solve_spot.py -b "AsKh7d2c" -p 15 -s 85
@@ -350,7 +350,7 @@ print(f"Hero vs 2 randoms: {equity_3way:.1%}")
 ```python
 from moid.game.cards import Card
 from moid.game.tree import GameTree
-from moid.solver import CFRSolver, CFRConfig, ExploitativeSolver
+from moid.solver import CFRSolver, CFRConfig, AdaptiveSolver
 from moid.analysis.stats import PlayerStats
 
 board = [Card.from_string(c) for c in ["Ks", "7d", "2c"]]
@@ -369,7 +369,7 @@ def progress(iteration, exploitability):
 strategy = solver.solve(callback=progress)
 print(f"Solved {strategy.num_info_sets()} information sets")
 
-# Exploitative solving against population
+# Population-based solving
 population_stats = PlayerStats(
     hands=10000,
     vpip=38.0,
@@ -379,7 +379,7 @@ population_stats = PlayerStats(
     af=1.4,
 )
 
-exploit_solver = ExploitativeSolver(
+exploit_solver = AdaptiveSolver(
     stats=population_stats,
     board=board,
     starting_pot=6.5,
@@ -461,7 +461,7 @@ for pos, pos_stats in stats.by_position.items():
 
 ```python
 from moid.game.cards import Card
-from moid.solver import ExploitativeSolver
+from moid.solver import AdaptiveSolver
 from moid.analysis.stats import PlayerStats
 from moid.db import get_connection
 from moid.analysis import compute_stats
@@ -474,7 +474,7 @@ conn.close()
 # Define the spot: BTN vs BB single raised pot, flop
 board = [Card.from_string(c) for c in ["Qs", "8d", "3c"]]
 
-solver = ExploitativeSolver(
+solver = AdaptiveSolver(
     stats=stats,
     board=board,
     starting_pot=6.5,    # Typical SRP
@@ -557,9 +557,9 @@ In poker, an information set represents what a player knows at a decision point:
 ### CFR (Counterfactual Regret Minimization)
 CFR iteratively improves strategies by tracking "regret" - how much better we could have done by taking different actions. Over many iterations, it converges to Nash equilibrium.
 
-### Exploitative vs GTO
+### Adaptive vs GTO
 - **GTO (Nash)**: Unexploitable strategy that doesn't lose to any counter-strategy
-- **Exploitative**: Maximizes EV against a specific opponent model, but may be exploitable
+- **Adaptive**: Maximizes EV against a specific opponent model, but may itself be exploitable
 
 ### Hand Abstraction
 Groups similar hands together to reduce computational complexity. Hands are bucketed by equity on each board.
