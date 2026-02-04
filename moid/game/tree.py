@@ -52,6 +52,11 @@ class GameNode:
     to_call: float = 0.0         # Amount to call
     street: int = 0              # 0=preflop, 1=flop, 2=turn, 3=river
 
+    # Track each player's contribution to the pot
+    # This is critical for computing correct fold equity
+    contribution0: float = 0.0   # IP's contribution to pot
+    contribution1: float = 0.0   # OOP's contribution to pot
+
     # For terminal nodes
     winner: Optional[int] = None  # Player who won (if known)
     showdown: bool = False        # True if went to showdown
@@ -124,6 +129,8 @@ class GameNode:
         new_to_call = 0.0
         new_player = 1 - self.player  # Switch players
         new_type = NodeType.PLAYER
+        new_contrib0 = self.contribution0
+        new_contrib1 = self.contribution1
 
         if action.action_type == ActionType.FOLD:
             new_type = NodeType.TERMINAL
@@ -136,6 +143,8 @@ class GameNode:
                 stack=self.stack,
                 to_call=0,
                 street=self.street,
+                contribution0=new_contrib0,
+                contribution1=new_contrib1,
                 winner=winner,
                 showdown=False,
                 parent=self,
@@ -144,6 +153,11 @@ class GameNode:
 
         elif action.action_type == ActionType.CALL:
             new_pot = self.pot + self.to_call
+            # Player calling adds to_call to their contribution
+            if self.player == 0:
+                new_contrib0 += self.to_call
+            else:
+                new_contrib1 += self.to_call
 
             # Check if this ends the street
             if self._is_street_ending(action):
@@ -156,6 +170,8 @@ class GameNode:
                         stack=self.stack - self.to_call,
                         to_call=0,
                         street=self.street,
+                        contribution0=new_contrib0,
+                        contribution1=new_contrib1,
                         showdown=True,
                         parent=self,
                         action_history=self.action_history + [action],
@@ -170,6 +186,8 @@ class GameNode:
                         stack=self.stack - self.to_call,
                         to_call=0,
                         street=self.street + 1,
+                        contribution0=new_contrib0,
+                        contribution1=new_contrib1,
                         parent=self,
                         action_history=self.action_history + [action],
                     )
@@ -181,6 +199,8 @@ class GameNode:
                     stack=self.stack - self.to_call,
                     to_call=0,
                     street=self.street,
+                    contribution0=new_contrib0,
+                    contribution1=new_contrib1,
                     parent=self,
                     action_history=self.action_history + [action],
                 )
@@ -197,6 +217,8 @@ class GameNode:
                         stack=self.stack,
                         to_call=0,
                         street=self.street,
+                        contribution0=new_contrib0,
+                        contribution1=new_contrib1,
                         showdown=True,
                         parent=self,
                         action_history=self.action_history + [action],
@@ -210,6 +232,8 @@ class GameNode:
                         stack=self.stack,
                         to_call=0,
                         street=self.street + 1,
+                        contribution0=new_contrib0,
+                        contribution1=new_contrib1,
                         parent=self,
                         action_history=self.action_history + [action],
                     )
@@ -221,6 +245,8 @@ class GameNode:
                     stack=self.stack,
                     to_call=0,
                     street=self.street,
+                    contribution0=new_contrib0,
+                    contribution1=new_contrib1,
                     parent=self,
                     action_history=self.action_history + [action],
                 )
@@ -229,6 +255,11 @@ class GameNode:
             bet_amount = action.amount
             new_pot = self.pot + bet_amount
             new_to_call = bet_amount
+            # Player betting adds bet_amount to their contribution
+            if self.player == 0:
+                new_contrib0 += bet_amount
+            else:
+                new_contrib1 += bet_amount
 
             child = GameNode(
                 node_type=new_type,
@@ -237,6 +268,8 @@ class GameNode:
                 stack=self.stack - bet_amount,
                 to_call=new_to_call,
                 street=self.street,
+                contribution0=new_contrib0,
+                contribution1=new_contrib1,
                 parent=self,
                 action_history=self.action_history + [action],
             )
@@ -300,6 +333,8 @@ class GameTree:
         Returns:
             Root node of the game tree
         """
+        # Starting pot is split evenly between players (from preflop action)
+        starting_contrib = self.starting_pot / 2
         self.root = GameNode(
             node_type=NodeType.PLAYER,
             player=1,  # OOP acts first postflop
@@ -307,6 +342,8 @@ class GameTree:
             stack=self.effective_stack,
             to_call=0,
             street=self.starting_street,
+            contribution0=starting_contrib,  # IP's contribution
+            contribution1=starting_contrib,  # OOP's contribution
         )
 
         self._build_subtree(self.root, bet_sizes, depth=0)
@@ -333,6 +370,8 @@ class GameTree:
                 stack=node.stack,
                 to_call=0,
                 street=node.street,
+                contribution0=node.contribution0,
+                contribution1=node.contribution1,
                 parent=node,
                 action_history=node.action_history.copy(),
             )

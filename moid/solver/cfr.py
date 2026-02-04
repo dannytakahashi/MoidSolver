@@ -288,16 +288,24 @@ class CFRSolver:
         """
         Compute terminal node values.
 
+        Values are computed as profit/loss from initial state:
+        - When folding: Winner profits opponent's contribution
+        - When showdown: EV = win_prob * pot - own_contribution
+
         Returns:
             Tuple of (player0_value, player1_value)
         """
         if node.winner is not None:
-            # Someone folded
-            pot = node.pot
+            # Someone folded - winner profits opponent's contribution
+            # (which equals pot minus their own contribution)
             if node.winner == 0:
-                return (pot / 2, -pot / 2)
+                # IP wins, OOP folded - IP profits OOP's contribution
+                profit = node.contribution1
+                return (profit, -profit)
             else:
-                return (-pot / 2, pot / 2)
+                # OOP wins, IP folded - OOP profits IP's contribution
+                profit = node.contribution0
+                return (-profit, profit)
 
         # Showdown - compute equity-weighted value
         # Higher bucket = stronger hand (by our abstraction)
@@ -311,9 +319,11 @@ class CFRSolver:
         else:
             p0_wins = 0.5
 
+        # EV = win_prob * pot - own_contribution
         pot = node.pot
-        ev0 = p0_wins * pot - (1 - p0_wins) * pot
-        return (ev0 / 2, -ev0 / 2)
+        ev0 = p0_wins * pot - node.contribution0
+        # ev1 = (1 - p0_wins) * pot - node.contribution1 = -ev0 (zero-sum)
+        return (ev0, -ev0)
 
     def _apply_discounting(self) -> None:
         """Apply discount to older regrets and strategy sums."""
