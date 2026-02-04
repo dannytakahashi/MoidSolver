@@ -12,41 +12,36 @@ class IgnitionParser:
     """
     Parser for Ignition/Bovada hand history files.
 
-    Ignition format characteristics:
-    - Players are anonymous (positions like "UTG [ME]", "BTN")
-    - Hole cards shown for hero and at showdown
+    Bovada format characteristics:
+    - Players identified by position (Small Blind, Big Blind, UTG, etc.)
+    - [ME] suffix indicates hero
     - All amounts in dollars
     - Hands separated by blank lines
     """
 
     # Regex patterns for parsing
     HAND_START = re.compile(
-        r"Ignition Hand #(\d+)\s*:?\s*"
-        r"(?:Zone Poker\s+)?(?:HOLDEM|Hold'?em)\s+"
-        r"No Limit\s*-?\s*"
-        r"\$?([\d.]+)/\$?([\d.]+)\s*-?\s*"
+        r"Bovada Hand #(\d+)"
+        r".*?"
+        r"HOLDEM\s+No Limit\s*-\s*"
         r"(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})"
     )
 
-    TABLE_INFO = re.compile(r"Table\s+(?:#?\d+\s+)?(?:Zone\s+)?(?:TBL#)?(\d+)")
-
     SEAT_INFO = re.compile(
-        r"Seat\s+(\d+):\s*(\S+)(?:\s*\[ME\])?\s*"
-        r"\(\s*\$?([\d,]+\.?\d*)\s*(?:in chips)?\)"
-    )
-
-    DEALT_CARDS = re.compile(
-        r"(\S+)(?:\s*\[ME\])?\s*:\s*Card dealt to a]spot\s*\[([2-9TJQKA][cdhs])\s+([2-9TJQKA][cdhs])\]"
+        r"Seat\s+(\d+):\s*(.+?)\s*\(\$?([\d,]+\.?\d*)\s*in chips\)"
     )
 
     HOLE_CARDS = re.compile(
-        r"(?:Dealt to\s+)?(\S+)(?:\s*\[ME\])?\s*\[([2-9TJQKA][cdhs])\s+([2-9TJQKA][cdhs])\]"
+        r"(.+?)\s*:\s*Card dealt to a spot\s*\[([2-9TJQKA][cdhs])\s+([2-9TJQKA][cdhs])\]"
+    )
+
+    BLIND_POST = re.compile(
+        r"(.+?)\s*:\s*(?:Small Blind|Big blind|Posts chip)\s*\$?([\d,]+\.?\d*)"
     )
 
     ACTION_PATTERN = re.compile(
-        r"(\S+)(?:\s*\[ME\])?\s*:\s*"
-        r"(Folds?|Checks?|Calls?|Bets?|Raises?|All-in(?:\(raise\))?)"
-        r"(?:\s*\(?\$?([\d,]+\.?\d*)\)?)?"
+        r"(.+?)\s*:\s*(Folds?|Checks?|Calls?|Bets?|Raises?|All-in)"
+        r"(?:\s*\$?([\d,]+\.?\d*))?"
         r"(?:\s*to\s*\$?([\d,]+\.?\d*))?"
     )
 
@@ -54,30 +49,33 @@ class IgnitionParser:
         r"\*\*\*\s*(FLOP|TURN|RIVER)\s*\*\*\*\s*\[([^\]]+)\]"
     )
 
-    SHOWS_PATTERN = re.compile(
-        r"(\S+)(?:\s*\[ME\])?\s*:\s*(?:Shows|Showdown)\s*\[([2-9TJQKA][cdhs])\s+([2-9TJQKA][cdhs])\]"
+    SHOWDOWN_PATTERN = re.compile(
+        r"(.+?)\s*:\s*(?:Showdown|Shows|Does not show)\s*\[?([^\]]*)\]?"
     )
 
-    WINS_PATTERN = re.compile(
-        r"(\S+)(?:\s*\[ME\])?\s*:\s*(?:Hand result(?:-Loss)?|Wins|wins)\s*\$?([\d,]+\.?\d*)"
+    HAND_RESULT = re.compile(
+        r"(.+?)\s*:\s*Hand result\s*\$?([\d,]+\.?\d*)"
+    )
+
+    UNCALLED_BET = re.compile(
+        r"(.+?)\s*:\s*Return uncalled portion of bet\s*\$?([\d,]+\.?\d*)"
     )
 
     TOTAL_POT = re.compile(r"Total Pot\s*\(\s*\$?([\d,]+\.?\d*)\s*\)")
 
-    RAKE_PATTERN = re.compile(r"Rake\s*\(\s*\$?([\d,]+\.?\d*)\s*\)")
-
-    # Position mapping from seat names to Position enum
-    POSITION_MAP = {
-        "UTG": Position.UTG,
-        "UTG+1": Position.UTG1,
-        "CO": Position.CO,
+    # Position mapping
+    POSITION_NAMES = {
         "Dealer": Position.BTN,
         "Small Blind": Position.SB,
         "Big Blind": Position.BB,
+        "UTG": Position.UTG,
+        "UTG+1": Position.UTG1,
+        "UTG+2": Position.CO,  # In 6-max, UTG+2 is CO
     }
 
     def __init__(self):
         self._current_street = Street.PREFLOP
+        self._bb_amount = 0.05  # Default, will be detected
 
     def parse_file(self, filepath: str | Path) -> Iterator[Hand]:
         """Parse a hand history file and yield Hand objects."""
@@ -89,20 +87,21 @@ class IgnitionParser:
         hand_texts = self._split_hands(content)
 
         for hand_text in hand_texts:
+            if not hand_text.strip():
+                continue
             try:
                 hand = self.parse_hand(hand_text)
                 if hand is not None:
                     yield hand
             except Exception as e:
                 # Log parsing errors but continue
-                print(f"Error parsing hand: {e}")
                 continue
 
     def _split_hands(self, content: str) -> list[str]:
         """Split file content into individual hand texts."""
-        # Hands are typically separated by multiple blank lines
-        hands = re.split(r"\n\s*\n\s*\n", content)
-        return [h.strip() for h in hands if h.strip()]
+        # Split on "Bovada Hand #" but keep the delimiter
+        parts = re.split(r'(?=Bovada Hand #)', content)
+        return [p.strip() for p in parts if p.strip() and 'Bovada Hand #' in p]
 
     def parse_hand(self, text: str) -> Optional[Hand]:
         """Parse a single hand from text."""
@@ -117,36 +116,55 @@ class IgnitionParser:
 
         self._current_street = Street.PREFLOP
         position_map: dict[str, Position] = {}
+        seat_to_position: dict[int, str] = {}
+
+        # First pass: collect seat info to determine positions
+        for line in lines:
+            line = line.strip()
+            if line.startswith("Seat"):
+                match = self.SEAT_INFO.match(line)
+                if match:
+                    seat_num = int(match.group(1))
+                    player_name = match.group(2).replace("[ME]", "").strip()
+                    seat_to_position[seat_num] = player_name
+
+        # Detect BB amount from blind posting
+        for line in lines:
+            if "Big blind $" in line or "Big blind $" in line.lower():
+                match = re.search(r'\$?([\d.]+)', line.split("Big blind")[1])
+                if match:
+                    self._bb_amount = float(match.group(1))
+                    break
+
+        # Set stakes based on detected BB
+        hand.stakes = (self._bb_amount / 2, self._bb_amount)
 
         for line in lines[1:]:
             line = line.strip()
             if not line:
                 continue
 
-            # Parse table info
-            if "Table" in line:
-                match = self.TABLE_INFO.search(line)
-                if match:
-                    hand.table_name = match.group(1)
-                continue
-
             # Parse seat info
-            if line.startswith("Seat"):
+            if line.startswith("Seat") and "in chips" in line:
                 self._parse_seat(line, hand, position_map)
                 continue
 
             # Parse hole cards
-            if "Card dealt" in line or "[" in line and "]" in line:
+            if "Card dealt to a spot" in line:
                 self._parse_hole_cards(line, hand, position_map)
                 continue
 
             # Parse board cards
-            if "***" in line:
+            if line.startswith("***"):
                 self._parse_board(line, hand)
                 continue
 
+            # Parse blind posts (skip, just for info)
+            if "Small Blind $" in line or "Big blind $" in line or "Posts chip $" in line:
+                continue
+
             # Parse actions
-            if ":" in line:
+            if ":" in line and not line.startswith("Seat"):
                 self._parse_action(line, hand, position_map)
                 continue
 
@@ -154,14 +172,7 @@ class IgnitionParser:
             if "Total Pot" in line:
                 match = self.TOTAL_POT.search(line)
                 if match:
-                    hand.total_pot = self._parse_amount(match.group(1)) / hand.bb
-                continue
-
-            # Parse rake
-            if "Rake" in line:
-                match = self.RAKE_PATTERN.search(line)
-                if match:
-                    hand.rake = self._parse_amount(match.group(1))
+                    hand.total_pot = self._parse_amount(match.group(1)) / self._bb_amount
                 continue
 
         return hand
@@ -173,9 +184,7 @@ class IgnitionParser:
             return None
 
         hand_id = match.group(1)
-        sb = float(match.group(2))
-        bb = float(match.group(3))
-        timestamp_str = match.group(4)
+        timestamp_str = match.group(2)
 
         try:
             timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
@@ -185,28 +194,36 @@ class IgnitionParser:
         return Hand(
             hand_id=hand_id,
             timestamp=timestamp,
-            stakes=(sb, bb),
+            stakes=(0.02, 0.05),  # Default, will be updated
         )
 
     def _parse_seat(self, line: str, hand: Hand, position_map: dict[str, Position]) -> None:
         """Parse seat information."""
-        match = self.SEAT_INFO.search(line)
+        match = self.SEAT_INFO.match(line)
         if not match:
             return
 
         seat_num = int(match.group(1))
-        player_name = match.group(2)
+        player_name_raw = match.group(2)
         stack_dollars = self._parse_amount(match.group(3))
-        stack_bb = stack_dollars / hand.bb
 
-        # Map seat name to position
-        position = self._seat_name_to_position(player_name)
+        # Check for [ME] marker
+        is_hero = "[ME]" in player_name_raw
+        player_name = player_name_raw.replace("[ME]", "").strip()
+
+        # Map player name to position
+        position = self._name_to_position(player_name)
         if position is None:
             return
 
         position_map[player_name] = position
+        # Also map with [ME] suffix if hero
+        if is_hero:
+            position_map[player_name_raw.strip()] = position
+            position_map[player_name + " [ME]"] = position
+            position_map[player_name + "  [ME]"] = position  # Sometimes double space
 
-        is_hero = "[ME]" in line
+        stack_bb = stack_dollars / self._bb_amount
 
         player = Player(
             position=position,
@@ -215,35 +232,60 @@ class IgnitionParser:
         )
         hand.players.append(player)
 
-    def _seat_name_to_position(self, name: str) -> Optional[Position]:
-        """Convert Ignition seat name to Position."""
+    def _name_to_position(self, name: str) -> Optional[Position]:
+        """Convert player name to Position."""
         name = name.strip()
-        if name in self.POSITION_MAP:
-            return self.POSITION_MAP[name]
 
-        # Try parsing as position string
-        try:
-            return Position.from_string(name)
-        except ValueError:
-            return None
+        # Direct mapping
+        if name in self.POSITION_NAMES:
+            return self.POSITION_NAMES[name]
+
+        # Try variations
+        name_lower = name.lower()
+        for key, pos in self.POSITION_NAMES.items():
+            if key.lower() == name_lower:
+                return pos
+
+        # Handle CO specifically
+        if name in ("CO", "Cutoff"):
+            return Position.CO
+
+        return None
 
     def _parse_hole_cards(self, line: str, hand: Hand, position_map: dict[str, Position]) -> None:
         """Parse hole cards for a player."""
-        match = self.HOLE_CARDS.search(line)
+        match = self.HOLE_CARDS.match(line)
         if not match:
             return
 
-        player_name = match.group(1)
+        player_name_raw = match.group(1).strip()
         card1 = self._normalize_card(match.group(2))
         card2 = self._normalize_card(match.group(3))
 
-        position = position_map.get(player_name)
+        # Try to find position
+        position = self._lookup_position(player_name_raw, position_map)
         if position is None:
             return
 
         player = hand.get_player(position)
         if player:
             player.hole_cards = (card1, card2)
+
+    def _lookup_position(self, name: str, position_map: dict[str, Position]) -> Optional[Position]:
+        """Look up position from player name, handling variations."""
+        name = name.strip()
+
+        # Direct lookup
+        if name in position_map:
+            return position_map[name]
+
+        # Try without [ME]
+        clean_name = name.replace("[ME]", "").strip()
+        if clean_name in position_map:
+            return position_map[clean_name]
+
+        # Try base name to position mapping
+        return self._name_to_position(clean_name)
 
     def _parse_board(self, line: str, hand: Hand) -> None:
         """Parse board cards and update current street."""
@@ -270,54 +312,60 @@ class IgnitionParser:
 
     def _parse_action(self, line: str, hand: Hand, position_map: dict[str, Position]) -> None:
         """Parse a player action."""
-        # Check for showdown
-        shows_match = self.SHOWS_PATTERN.search(line)
-        if shows_match:
-            player_name = shows_match.group(1)
-            position = position_map.get(player_name)
-            if position:
-                player = hand.get_player(position)
-                if player:
-                    player.showed_cards = True
-                    card1 = self._normalize_card(shows_match.group(2))
-                    card2 = self._normalize_card(shows_match.group(3))
-                    player.hole_cards = (card1, card2)
-            return
-
-        # Check for wins
-        wins_match = self.WINS_PATTERN.search(line)
-        if wins_match:
-            player_name = wins_match.group(1)
-            amount = self._parse_amount(wins_match.group(2))
-            position = position_map.get(player_name)
-            if position:
-                if position not in hand.winners:
-                    hand.winners.append(position)
-                player = hand.get_player(position)
-                if player:
-                    player.result = amount / hand.bb
-            return
+        # Skip non-action lines
+        skip_patterns = [
+            "Card dealt", "Set dealer", "Showdown", "Hand result",
+            "Return uncalled", "Does not show", "Table leave",
+            "Seat stand", "Table deposit", "Seat re-join",
+            "Small Blind $", "Big blind $", "Posts chip $"
+        ]
+        for pattern in skip_patterns:
+            if pattern in line:
+                # Handle hand result
+                if "Hand result" in line:
+                    match = self.HAND_RESULT.match(line)
+                    if match:
+                        player_name = match.group(1).strip()
+                        amount = self._parse_amount(match.group(2))
+                        position = self._lookup_position(player_name, position_map)
+                        if position:
+                            if position not in hand.winners:
+                                hand.winners.append(position)
+                            player = hand.get_player(position)
+                            if player:
+                                player.result = amount / self._bb_amount
+                # Handle showdown
+                if "Showdown" in line or "Does not show" in line:
+                    match = self.SHOWDOWN_PATTERN.match(line)
+                    if match:
+                        player_name = match.group(1).strip()
+                        position = self._lookup_position(player_name, position_map)
+                        if position:
+                            player = hand.get_player(position)
+                            if player:
+                                player.showed_cards = "Showdown" in line
+                return
 
         # Parse regular actions
-        action_match = self.ACTION_PATTERN.search(line)
-        if not action_match:
+        match = self.ACTION_PATTERN.match(line)
+        if not match:
             return
 
-        player_name = action_match.group(1)
-        action_str = action_match.group(2)
-        amount_str = action_match.group(3) or action_match.group(4) or "0"
+        player_name = match.group(1).strip()
+        action_str = match.group(2)
+        amount_str = match.group(3) or match.group(4) or "0"
 
-        position = position_map.get(player_name)
+        position = self._lookup_position(player_name, position_map)
         if position is None:
             return
 
         try:
-            action_type = ActionType.from_string(action_str)
+            action_type = self._parse_action_type(action_str)
         except ValueError:
             return
 
-        amount = self._parse_amount(amount_str) / hand.bb
-        is_all_in = "All-in" in action_str
+        amount = self._parse_amount(amount_str) / self._bb_amount
+        is_all_in = "All-in" in action_str or "All-in" in line
 
         action = Action(
             position=position,
@@ -328,15 +376,33 @@ class IgnitionParser:
         )
         hand.actions.append(action)
 
+    def _parse_action_type(self, action_str: str) -> ActionType:
+        """Parse action type from string."""
+        action_str = action_str.lower().strip()
+
+        if "fold" in action_str:
+            return ActionType.FOLD
+        if "check" in action_str:
+            return ActionType.CHECK
+        if "call" in action_str:
+            return ActionType.CALL
+        if "bet" in action_str:
+            return ActionType.BET
+        if "raise" in action_str:
+            return ActionType.RAISE
+        if "all-in" in action_str or "allin" in action_str:
+            return ActionType.ALL_IN
+
+        raise ValueError(f"Unknown action: {action_str}")
+
     def _parse_cards(self, cards_str: str) -> list[str]:
         """Parse a string of cards into a list."""
-        # Match card patterns
         pattern = re.compile(r"([2-9TJQKA][cdhs])")
         matches = pattern.findall(cards_str)
         return [self._normalize_card(c) for c in matches]
 
     def _normalize_card(self, card: str) -> str:
-        """Normalize card representation (e.g., 'Th' -> 'Th')."""
+        """Normalize card representation."""
         if len(card) != 2:
             return card
         rank = card[0].upper()
@@ -347,7 +413,6 @@ class IgnitionParser:
         """Parse dollar amount string to float."""
         if not amount_str:
             return 0.0
-        # Remove commas and dollar signs
         cleaned = amount_str.replace(",", "").replace("$", "").strip()
         try:
             return float(cleaned)
@@ -356,6 +421,6 @@ class IgnitionParser:
 
 
 def parse_ignition_file(filepath: str | Path) -> list[Hand]:
-    """Convenience function to parse an Ignition hand history file."""
+    """Convenience function to parse an Ignition/Bovada hand history file."""
     parser = IgnitionParser()
     return list(parser.parse_file(filepath))

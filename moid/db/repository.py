@@ -116,7 +116,7 @@ class HandRepository:
             batch_size: Number of hands per transaction
 
         Returns:
-            Total number of hands inserted
+            Total number of hands actually inserted (excludes duplicates)
         """
         count = 0
         batch = []
@@ -124,22 +124,27 @@ class HandRepository:
         for hand in hands:
             batch.append(hand)
             if len(batch) >= batch_size:
-                self._insert_batch(batch)
-                count += len(batch)
+                count += self._insert_batch(batch)
                 batch = []
 
         if batch:
-            self._insert_batch(batch)
-            count += len(batch)
+            count += self._insert_batch(batch)
 
         return count
 
-    def _insert_batch(self, hands: list[Hand]) -> None:
-        """Insert a batch of hands in a single transaction."""
+    def _insert_batch(self, hands: list[Hand]) -> int:
+        """
+        Insert a batch of hands in a single transaction.
+
+        Returns:
+            Number of hands actually inserted
+        """
+        inserted = 0
         try:
             for hand in hands:
                 try:
                     self.insert_hand(hand)
+                    inserted += 1
                 except sqlite3.IntegrityError:
                     # Hand already exists, skip
                     continue
@@ -147,6 +152,7 @@ class HandRepository:
         except Exception:
             self.conn.rollback()
             raise
+        return inserted
 
     def get_hand(self, hand_id: str) -> Optional[Hand]:
         """
