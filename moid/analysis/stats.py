@@ -67,15 +67,16 @@ def compute_stats(
     Returns:
         PlayerStats object with computed statistics
     """
+    # If no position specified, compute average across all positions
+    if not position:
+        return _compute_average_stats(conn, min_stack, max_stack)
+
     stats = PlayerStats()
 
     # Build common filters
-    filters = []
-    params = []
+    filters = ["p.position = ?"]
+    params = [position]
 
-    if position:
-        filters.append("p.position = ?")
-        params.append(position)
     if min_stack is not None:
         filters.append("p.stack >= ?")
         params.append(min_stack)
@@ -83,7 +84,7 @@ def compute_stats(
         filters.append("p.stack <= ?")
         params.append(max_stack)
 
-    where_clause = " AND ".join(filters) if filters else "1=1"
+    where_clause = " AND ".join(filters)
 
     # Count total hands
     stats.hands = _count_hands(conn, where_clause, params)
@@ -115,16 +116,54 @@ def compute_stats(
     stats.wtsd = showdown["wtsd"]
     stats.wsd = showdown["wsd"]
 
-    # Compute position-specific stats if no position filter
-    if not position:
-        stats.vpip_by_position = _compute_stat_by_position(
-            conn, "vpip", min_stack, max_stack
-        )
-        stats.pfr_by_position = _compute_stat_by_position(
-            conn, "pfr", min_stack, max_stack
-        )
-
     return stats
+
+
+def _compute_average_stats(
+    conn: sqlite3.Connection,
+    min_stack: Optional[float] = None,
+    max_stack: Optional[float] = None,
+) -> PlayerStats:
+    """
+    Compute average stats across all positions.
+
+    This gives a meaningful "overall" population stat by averaging
+    the per-position stats rather than computing a nonsensical aggregate.
+    """
+    positions = ["UTG", "UTG1", "CO", "BTN", "SB", "BB"]
+    position_stats: dict[str, PlayerStats] = {}
+
+    for pos in positions:
+        pos_stats = compute_stats(conn, position=pos, min_stack=min_stack, max_stack=max_stack)
+        if pos_stats.hands > 0:
+            position_stats[pos] = pos_stats
+
+    if not position_stats:
+        return PlayerStats()
+
+    stats_list = list(position_stats.values())
+    n = len(stats_list)
+
+    # Average the stats across positions
+    avg = PlayerStats()
+    avg.hands = sum(s.hands for s in stats_list)
+
+    avg.vpip = sum(s.vpip for s in stats_list) / n
+    avg.pfr = sum(s.pfr for s in stats_list) / n
+    avg.three_bet = sum(s.three_bet for s in stats_list) / n
+    avg.fold_to_3bet = sum(s.fold_to_3bet for s in stats_list) / n
+    avg.cbet = sum(s.cbet for s in stats_list) / n
+    avg.fold_to_cbet = sum(s.fold_to_cbet for s in stats_list) / n
+    avg.af = sum(s.af for s in stats_list) / n
+    avg.afq = sum(s.afq for s in stats_list) / n
+    avg.wtsd = sum(s.wtsd for s in stats_list) / n
+    avg.wsd = sum(s.wsd for s in stats_list) / n
+
+    # Store per-position breakdowns
+    avg.vpip_by_position = {pos: s.vpip for pos, s in position_stats.items()}
+    avg.pfr_by_position = {pos: s.pfr for pos, s in position_stats.items()}
+
+    return avg
 
 
 def _count_hands(conn: sqlite3.Connection, where_clause: str, params: list) -> int:

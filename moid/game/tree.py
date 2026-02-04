@@ -23,7 +23,7 @@ class ActionType(Enum):
     ALL_IN = auto()
 
 
-@dataclass
+@dataclass(frozen=True)
 class Action:
     """An action in the game tree."""
     action_type: ActionType
