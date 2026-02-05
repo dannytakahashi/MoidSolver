@@ -9,11 +9,15 @@ A microstakes NLHE solver for 6-max no-limit hold'em, focused on identifying opt
 - [CLI Tools](#cli-tools)
   - [Importing Hand Histories](#importing-hand-histories)
   - [Analyzing Population](#analyzing-population)
+  - [Personal Stats Dashboard](#personal-stats-dashboard)
+  - [Reviewing Hands](#reviewing-hands)
   - [Solving Spots](#solving-spots)
 - [Python API](#python-api)
   - [Parsing Hands](#parsing-hands)
   - [Database Operations](#database-operations)
   - [Computing Statistics](#computing-statistics)
+  - [Hero Analysis (Personal Study)](#hero-analysis-personal-study)
+  - [GTO Benchmarks](#gto-benchmarks)
   - [Player Classification](#player-classification)
   - [Equity Calculations](#equity-calculations)
   - [Running the Solver](#running-the-solver)
@@ -159,6 +163,147 @@ python scripts/analyze_population.py -d hands.db --by-position --by-stack --expl
 ...
 ```
 
+### Personal Stats Dashboard
+
+Analyze your own play, compare to GTO benchmarks, and identify leaks.
+
+```bash
+python scripts/my_stats.py [OPTIONS]
+```
+
+**Options:**
+- `-d, --database PATH` - Database file path (default: `hands.db`)
+- `-p, --position POS` - Show stats for a specific position
+- `--leaks` - Show detailed leak analysis
+- `--spots` - Show spot-by-spot analysis
+- `--flagged` - Show hands flagged for review
+- `--flagged-limit N` - Number of flagged hands to show (default: 10)
+- `--no-gto` - Hide GTO comparison columns
+- `-v, --verbose` - Show additional detail
+
+**Examples:**
+
+```bash
+# View your stats with leak analysis
+python scripts/my_stats.py -d hands.db
+
+# View stats for a specific position
+python scripts/my_stats.py -p BTN
+
+# Include spot-by-spot analysis
+python scripts/my_stats.py --spots
+
+# Show hands flagged for review
+python scripts/my_stats.py --flagged --flagged-limit 20
+
+# Detailed view with all analysis
+python scripts/my_stats.py --leaks --spots -v
+```
+
+**Sample Output:**
+
+```
+                 Overall Statistics
+╭───────────────┬────────────┬───────────┬──────────╮
+│ Statistic     │ Your Value │ GTO Range │  Status  │
+├───────────────┼────────────┼───────────┼──────────┤
+│ Hands         │    140,491 │           │ Reliable │
+│ VPIP          │      25.9% │     22-28 │    OK    │
+│ PFR           │      18.9% │     18-24 │    OK    │
+│ 3-Bet         │       7.8% │      6-10 │    OK    │
+│ Fold to 3-Bet │      36.1% │     45-55 │   !!!    │
+│ C-Bet         │      50.7% │     50-70 │    OK    │
+│ AF            │       1.71 │   2.0-3.5 │    !     │
+│ WTSD          │      31.6% │     24-30 │    !     │
+│ W$SD          │      48.1% │     45-55 │    OK    │
+╰───────────────┴────────────┴───────────┴──────────╯
+
+╭─────────────────── Leak Analysis (4 issues found) ───────────────────╮
+│ Major Leaks:                                                         │
+│   !!!! [BB] Not defending BB enough                                  │
+│                                                                      │
+│ Moderate Leaks:                                                      │
+│   !! Not folding to 3-bets enough (36.1%)                            │
+│   !! [BTN] Opening too tight from BTN                                │
+╰──────────────────────────────────────────────────────────────────────╯
+```
+
+### Reviewing Hands
+
+Review specific hands with detailed action replay, pot sizes, and analysis.
+
+```bash
+python scripts/review_hand.py [HAND_ID] [OPTIONS]
+```
+
+**Arguments:**
+- `HAND_ID` - Hand ID to review (partial match supported)
+
+**Options:**
+- `-d, --database PATH` - Database file path (default: `hands.db`)
+- `--list` - List recent hands
+- `-n, --num N` - Number of hands to list (default: 10)
+- `--losses` - Only show hands where hero lost
+- `--big-pots` - Only show large pots (30bb+)
+- `-v, --verbose` - Show additional analysis
+
+**Examples:**
+
+```bash
+# List recent hands
+python scripts/review_hand.py --list
+
+# List recent big pot losses
+python scripts/review_hand.py --list --losses --big-pots
+
+# Review a specific hand
+python scripts/review_hand.py 4690296304
+
+# Review with detailed analysis
+python scripts/review_hand.py 4690296304 -v
+```
+
+**Sample Output:**
+
+```
+╭──────────────────────────────── Hand Summary ────────────────────────╮
+│ Hand: 4690296304                                                     │
+│ Stakes: $0.025/0.05                                                  │
+│ Board: 7c 6c Jd 2d (semi_wet)                                        │
+│ Pot: 230.6bb                                                         │
+│ Hero: CO with 9h7h | Result: +0.0bb                                  │
+╰──────────────────────────────────────────────────────────────────────╯
+
+                     Players
+  Position     Stack   Cards     Result
+ ────────────────────────────────────────────────
+  BTN        105.8bb   AsJc    +109.6bb   (Chop)
+  BB         109.8bb   AcJs    +109.6bb   (Chop)
+
+Preflop (pot: 1.5bb)
+──────────────────────────────────────────────────
+  UTG: RAISE 2.4bb
+  BTN: CALL 2.4bb
+  BB: CALL 1.4bb
+
+Flop: 7c 6c Jd (pot: 8.2bb)
+──────────────────────────────────────────────────
+  BB: CHECK
+  UTG: BET 7.0bb
+  BTN: CALL 7.0bb
+  BB: CALL 7.0bb
+
+Turn: 2d (pot: 29.2bb)
+──────────────────────────────────────────────────
+  BB: CHECK
+  UTG: BET 29.2bb
+  BTN: CALL 29.2bb
+  BB: CALL 29.2bb
+
+Final pot: 230.6bb
+Chop between: BB, BTN
+```
+
 ### Solving Spots
 
 Solve specific poker spots using CFR or population-based methods.
@@ -281,6 +426,89 @@ pop_stats = analyzer.analyze()
 exploits = analyzer.get_exploits()
 for exploit in exploits:
     print(f"- {exploit}")
+```
+
+### Hero Analysis (Personal Study)
+
+```python
+from moid.db import get_connection
+from moid.analysis import HeroAnalyzer, SpotAnalyzer, SpotType, HandFlagger
+
+conn = get_connection("hands.db")
+
+# Analyze your own play
+hero_analyzer = HeroAnalyzer(conn)
+hero_stats = hero_analyzer.analyze()
+
+print(f"Your hands: {hero_stats.overall.hands}")
+print(f"Your VPIP: {hero_stats.overall.vpip:.1f}%")
+print(f"Your PFR: {hero_stats.overall.pfr:.1f}%")
+
+# View stats by position
+for pos, stats in hero_stats.by_position.items():
+    print(f"{pos}: VPIP={stats.vpip:.1f}%, PFR={stats.pfr:.1f}%")
+
+# Check identified leaks
+print(f"\nFound {len(hero_stats.leaks)} leaks:")
+for leak in hero_stats.leaks:
+    print(f"  [{leak.severity}] {leak.description}")
+    print(f"    Suggestion: {leak.suggestion}")
+
+# Analyze specific spots
+spot_analyzer = SpotAnalyzer(conn)
+
+# Check your c-bet frequency
+cbet_stats = spot_analyzer.analyze_spot(SpotType.CBET_OPPORTUNITY)
+print(f"\nC-bet opportunities: {cbet_stats.opportunities}")
+print(f"Your c-bet %: {cbet_stats.bet_pct:.1f}%")
+print(f"Optimal: {cbet_stats.optimal_bet:.1f}%")
+
+# Check BB defense
+bb_defense = spot_analyzer.analyze_spot(SpotType.BLIND_DEFENSE)
+print(f"\nBB defense: {100 - bb_defense.fold_pct:.1f}%")
+
+# Flag hands for review
+flagger = HandFlagger(conn)
+flagged_hands = flagger.flag_hands(limit=10)
+
+print(f"\nHands to review:")
+for hand in flagged_hands:
+    print(f"  {hand.hand_id}: {hand.pot_size:.1f}bb pot, {hand.hero_result:+.1f}bb")
+    print(f"    Flags: {', '.join(f.name for f in hand.flags)}")
+```
+
+### GTO Benchmarks
+
+```python
+from moid.analysis import (
+    GTO_BENCHMARKS,
+    MICROSTAKES_ADJUSTMENTS,
+    get_benchmark,
+    classify_board_texture
+)
+
+# Get GTO benchmarks by position
+btn_bench = GTO_BENCHMARKS.by_position["BTN"]
+print(f"BTN should open: {btn_bench.rfi:.0f}%")
+print(f"BTN c-bet flop: {btn_bench.cbet_flop:.0f}%")
+print(f"BTN fold to 3-bet: {btn_bench.fold_vs_3bet:.0f}%")
+
+# Get adjusted targets for microstakes
+adjusted_rfi = MICROSTAKES_ADJUSTMENTS.get_adjusted_rfi("BTN", btn_bench.rfi)
+print(f"Microstakes BTN open: {adjusted_rfi:.0f}%")
+
+# Check practical adjustments
+print("\nMicrostakes exploits:")
+for exploit in MICROSTAKES_ADJUSTMENTS.exploits:
+    print(f"  - {exploit}")
+
+# Classify board texture for c-bet decisions
+board = ["Ks", "7h", "2d"]
+texture = classify_board_texture(board)
+print(f"\nBoard {' '.join(board)} is: {texture}")
+
+cbet_adj = MICROSTAKES_ADJUSTMENTS.cbet_adjustment.get(texture, 0)
+print(f"C-bet adjustment: {cbet_adj:+.0f}%")
 ```
 
 ### Player Classification

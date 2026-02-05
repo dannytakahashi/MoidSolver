@@ -428,10 +428,14 @@ def _compute_showdown_stats(
 
     WTSD: Went to showdown when saw flop
     W$SD: Won money at showdown
+
+    Uses hands.went_to_showdown flag instead of players.showed_cards
+    to avoid selection bias (players can muck losing hands without showing).
     """
     query = f"""
         WITH saw_flop AS (
-            SELECT DISTINCT h.id as hand_id, p.position, p.showed_cards, p.is_winner
+            SELECT DISTINCT h.id as hand_id, p.position,
+                   h.went_to_showdown, p.is_winner
             FROM hands h
             JOIN players p ON h.id = p.hand_id
             WHERE {where_clause}
@@ -447,8 +451,8 @@ def _compute_showdown_stats(
         )
         SELECT
             COUNT(*) as saw_flop,
-            SUM(CASE WHEN showed_cards = 1 THEN 1 ELSE 0 END) as showdowns,
-            SUM(CASE WHEN showed_cards = 1 AND is_winner = 1 THEN 1 ELSE 0 END) as won_sd
+            SUM(CASE WHEN went_to_showdown = 1 THEN 1 ELSE 0 END) as showdowns,
+            SUM(CASE WHEN went_to_showdown = 1 AND is_winner = 1 THEN 1 ELSE 0 END) as won_sd
         FROM saw_flop
     """
     cursor = conn.execute(query, params)
