@@ -1,6 +1,6 @@
 # MoidSolver
 
-A microstakes NLHE solver for 6-max no-limit hold'em, focused on identifying optimal strategies against microstakes populations using Ignition/Bovada hand history data.
+An NLHE solver for 6-max no-limit hold'em, focused on identifying optimal strategies against microstakes populations using Ignition/Bovada hand history data.
 
 ## Table of Contents
 
